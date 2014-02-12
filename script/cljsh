@@ -1,0 +1,146 @@
+#!/bin/sh
+
+SCRIPT=$1
+
+# next veriable should be a version number, for example 1.5.1
+CLJ_VERSION="1.5.1"
+
+# count the number of header-lines to be skipped
+NUM_HEADER=0
+
+NOCLJ=FALSE
+
+REPL=
+
+MAIN=
+
+CLASSPATH=
+
+process_noclj() {
+  if [ $# -gt 0 ]; then
+    echo "option #NOCLJ  has no arguments! [ABORT]" >&2
+    exit 1
+  fi
+  NOCLJ=TRUE
+}
+
+process_maven() {
+  # remove brackets and space (tr -d might be faster)
+  # and change remaining whitespace to spaces
+  local dep="$1"
+  dep=$(echo "${dep}" |sed -e 's/^\s*\[\s*//g' -e 's/\s*\]\s*$//g' -e's/\s+/ /g' -e 's/"//g')
+  local art=$(echo "${dep}" |cut -d" " -f 1)
+  local version=$(echo "${dep}" |cut -d" " -f2)
+  local empty=$(echo "${dep}" |cut -d" " -f3)
+  local groupId=$(echo "${art}" |cut -d/ -f1)
+  local artId=$(echo "${art}" |cut -d/ -f2)
+
+  if [ -z ${empty} ]; then
+    echo "${HOME}/.m2/repository/${groupId}/${artId}/${version}/${artId}-${version}.jar"
+  else
+    echo "Maven dependency incorrectly formatted: ${dep}. Found third item '${empty}'" >&2
+  fi
+}
+
+process_dep() {
+  local dep="$1"
+  local jar=
+  if [ $(expr index "${dep}" "[") -eq 1 ]; then
+    jar=$(process_maven "${dep}")
+  else
+    if [ $(expr index "${dep}" "/") -eq 1 ]; then
+      jar="${dep}";
+    else
+      jar="${HOME}/.m2/repository/${dep}"
+    fi
+  fi
+  # append to classpath
+  jar=$(echo "${jar}" | sed -e 's/^ *//g' -e 's/ *$//g')
+  if [ $(expr length "${jar}") -gt 0 ]; then
+    if [ $(expr length "${CLASSPATH}") -gt 0 ]; then
+      CLASSPATH="${CLASSPATH}:${jar}"
+    else
+      CLASSPATH="${jar}"
+    fi    
+  else
+    echo "Dependency: '${dep}' did return an empty path" >&2
+  fi
+}
+
+process_header_line() {
+    local line="$1";
+    local head=$(echo "${line}" |awk '{print $1}')
+    local tail="$(echo "${line}" |awk '{print substr($0, index($0,$2))}')"
+    case ${head} in
+      "#DEP")  process_dep "${tail}"
+               ;;
+      "#NOCLJ") process_noclj "${tail}"
+               ;;
+      "#ECHO") echo "${tail}" 
+               ;;
+      "#REPL") REPL=" -r " 
+               ;;
+      "#MAIN") MAIN="${tail}" 
+               ;;
+      "#")     #echo "comment:  ${tail}"      "#")     #echo "comment:  ${tail}"
+               ;;
+      *) echo "Incorrect header tag: ${head}" >&2
+    esac
+}
+
+#tail -n +2 tst.clj| \
+while read line 
+do
+  if [ "X$(echo ${line} |cut -c 1)" = "X#" ]; then
+    NUM_HEADER=$(expr ${NUM_HEADER} + 1)
+    # ignore the first line  with content #/bin/cljsh (as install might use alternative path)
+    if [ ${NUM_HEADER} -gt 1 ]; then
+      process_header_line "${line}"
+    fi
+    #echo " count increased: ${NUM_HEADER}"
+  else
+    #echo "line: ${line}  is not headerline, so assume code [BREAK header-processing]"
+    break;
+  fi;
+done  <${SCRIPT}
+
+if ! [ "${NOCLJ}" = "TRUE" ]; then
+
+  if [ "X${CLJ_VERSION}" = "X" ]; then
+     echo  >&2
+     echo "Clojure version not specifified."  >&2
+     echo "Available versions on your system are:"  >&2
+     find "${HOME}/.m2/repository/org/clojure/clojure/" -name "clojure*.jar"  | cut -d/ -f 6  >&2
+     echo "Set variable CLJ_VERSION in /bin/clj to the correct clojure-version!"  >&2
+     echo "  Or include header-line '#NOCLJ' when clojure is included in other dependency." >&2
+     echo  >&2
+     exit 1
+  fi
+
+  CLJ_JAR="${HOME}/.m2/repository/org/clojure/clojure/${CLJ_VERSION}/clojure-${CLJ_VERSION}.jar" 
+  if [ -z ${CLASSPATH} ]; then
+    CLASSPATH="${CLJ_JAR}"
+  else
+    CLASSPATH="${CLJ_JAR}:${CLASSPATH}"
+  fi
+fi
+  
+
+#echo " counted ${NUM_HEADER}  header-lines"
+#echo "CLASSPATH=${CLASSPATH}"
+
+
+shift   
+# executing the script
+NUM_HEADER=$(expr ${NUM_HEADER} + 1)
+TMPSCRIPT=$(mktemp --suffix=.cljsh)
+tail -n +${NUM_HEADER} ${SCRIPT} >${TMPSCRIPT}
+
+if [ "X${MAIN}" != "X" ]; then
+  echo "(apply ${MAIN} *command-line-arg*)"
+fi
+
+java -cp "${CLASSPATH}" \
+    clojure.main -i ${TMPSCRIPT} ${REPL}  $*
+rm ${TMPSCRIPT}
+

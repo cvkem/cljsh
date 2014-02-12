@@ -1,0 +1,4 @@
+#!/bin/cljsh
+
+(println "hello world!")
+
