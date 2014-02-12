@@ -1,0 +1,10 @@
+#!/bin/cljsh
+#RUN show-args
+
+(println "hello world!")
+
+(defn show-args [& args]
+  (println "received " (count args) " arguments")
+  (doseq [[i arg] (map #(vector %1 %2) (next (range)) args)] 
+    (println "\t" i ": "arg)))
+

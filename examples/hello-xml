@@ -1,0 +1,17 @@
+#!/bin/cljsh
+#DEP [org.clojure/data.xml "0.0.7"]
+#RUN parse-xml-to-x
+#REPL
+
+(require '[clojure.data.xml :as xml])
+
+(println "hello world!")
+
+
+(defn parse-xml-to-x [& args]
+  (if (= (count args) 1)
+    (let [fName (first args)] 
+      (def x (xml/parse-str (slurp fName)))
+      (println "parsed file: " fName " and stored xml in global var 'x"))
+    (println "Expecting exactly one argument, which corresponds to an xml-file")))
+

@@ -10,9 +10,9 @@ NUM_HEADER=0
 
 NOCLJ=FALSE
 
-REPL=
+REPL="-"
 
-MAIN=
+RUN=
 
 CLASSPATH=
 
@@ -33,7 +33,9 @@ process_maven() {
   local version=$(echo "${dep}" |cut -d" " -f2)
   local empty=$(echo "${dep}" |cut -d" " -f3)
   local groupId=$(echo "${art}" |cut -d/ -f1)
+  groupId=$(echo "${groupId}" |sed -e "s/\./\//g")
   local artId=$(echo "${art}" |cut -d/ -f2)
+
 
   if [ -z ${empty} ]; then
     echo "${HOME}/.m2/repository/${groupId}/${artId}/${version}/${artId}-${version}.jar"
@@ -80,7 +82,7 @@ process_header_line() {
                ;;
       "#REPL") REPL=" -r " 
                ;;
-      "#MAIN") MAIN="${tail}" 
+      "#RUN") RUN="${tail}" 
                ;;
       "#")     #echo "comment:  ${tail}"      "#")     #echo "comment:  ${tail}"
                ;;
@@ -136,11 +138,21 @@ NUM_HEADER=$(expr ${NUM_HEADER} + 1)
 TMPSCRIPT=$(mktemp --suffix=.cljsh)
 tail -n +${NUM_HEADER} ${SCRIPT} >${TMPSCRIPT}
 
-if [ "X${MAIN}" != "X" ]; then
-  echo "(apply ${MAIN} *command-line-arg*)"
+if [ "X${RUN}" != "X" ]; then
+  echo "(apply ${RUN} *command-line-args*)" >>${TMPSCRIPT}
 fi
 
-java -cp "${CLASSPATH}" \
+if [ "X${REPL}" = "X-" ]; then
+  EMPTY=/tmp/empty
+  echo >${EMPTY}
+  java -cp "${CLASSPATH}" \
+    clojure.main -i ${TMPSCRIPT} -  $* <${EMPTY}
+  rm ${EMPTY}
+else
+  java -cp "${CLASSPATH}" \
     clojure.main -i ${TMPSCRIPT} ${REPL}  $*
-rm ${TMPSCRIPT}
+fi
 
+if [ $? = 1 ]; then
+  rm ${TMPSCRIPT}
+fi
